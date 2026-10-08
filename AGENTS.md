@@ -52,12 +52,15 @@ uni-synthesis/
 ├── requirements.txt
 ├── .env.example           ← copia in .env per personalizzare
 ├── scripts/
-│   ├── full_to_text.py    ← PDF nativo → markdown estratto
-│   ├── ocr_to_text.py     ← PDF scan → split + enhance + OCR → markdown
-│   ├── split_chapters.py  ← estratto.md → un file per capitolo
-│   ├── quality_check.py   ← copertura sintesi vs originale (deterministico + opz. LLM)
-│   ├── report.py          ← report di fine lavorazione
-│   └── pipeline.py        ← orchestratore CLI (prepare / finalize / all)
+│   ├── full_to_text.py     ← PDF nativo → markdown estratto
+│   ├── ocr_to_text.py      ← PDF scan → split + enhance + OCR → markdown
+│   ├── split_pdf.py        ← doppie pagine → pagine singole (vettoriale, conserva il layer testo)
+│   ├── revise_extract.py   ← estratto → markdown pulito (paragrafi, note `>`, titoli)
+│   ├── ocr_crosscheck.py   ← seconda lettura OCR CPU (tesseract) + confronto (cross-check)
+│   ├── split_chapters.py   ← estratto.md → un file per capitolo
+│   ├── quality_check.py    ← copertura sintesi vs originale (deterministico + opz. LLM)
+│   ├── report.py           ← report di fine lavorazione
+│   └── pipeline.py         ← orchestratore CLI (prepare / finalize / all)
 ├── prompts/
 │   ├── synth_chapter.md   ← prompt agente sintesi (3 fasi)
 │   ├── verify_chapter.md  ← prompt verifica incrociata
@@ -97,7 +100,30 @@ Output: `books/<Libro>/<Libro> - estratto.md`. Usa `--exclude 1,2,250-260` per e
 # 2. lancia la pipeline:
 python scripts/ocr_to_text.py "books/<Scan>.pdf"
 ```
-Output: PDF cercabile con layer OCR + `<Libro> - estratto.md`. Per scansioni molto degradate (es. CamScanner), considera di affidare la trascrizione pagina-per-pagina a agenti opus con `prompts/transcribe_page.md` (input: PNG + bozza OCR).
+Output: PDF cercabile con layer OCR + `<Libro> - estratto.md`. Per scansioni molto degradate (es. CamScanner), considera di affidare la trascrizione pagina-per-pagina a un agente AI (usa il modello più capace disponibile) con `prompts/transcribe_page.md` (input: PNG + bozza OCR).
+
+### Step 1b — Validazione OCR in CPU (cross-check) — consigliato
+
+**Principio:** l'OCR base si fa **in CPU con tesseract** (nessun LLM); l'LLM interviene poi **solo sul testo** (comprensione, pulizia, scelta). Si produce una **seconda lettura indipendente** della pagina e la si confronta con il markdown: dove le due letture concordano → confermato; dove divergono → si arbitra (regole o LLM).
+
+```bash
+# a) mirato: recuperare frammenti [illeggibile] (JSON con page/before/after)
+python scripts/ocr_crosscheck.py --mode fragments \
+  --pdf "books/<Libro>/<Libro> - split.pdf" \
+  --current "books/<Libro>/<Libro> - estratto.md" \
+  --fragments frammenti.json --out /tmp/cross_frag.md
+
+# b) completo: confronto pagina-per-pagina tesseract ↔ layer dell'estratto
+python scripts/ocr_crosscheck.py --mode full --dpi 300 \
+  --pdf "books/<Libro>/<Libro> - split.pdf" \
+  --estratto "books/<Libro>/<Libro> - estratto.md" \
+  --out "books/<Libro>/quality_check cross-ocr.md"
+```
+
+- Solo `tesseract` (`-l ita`) + PyMuPDF: gira in CPU in pochi minuti, **nessun modello multimodale**.
+- Modalità `full`: misura la **concordanza tra due letture indipendenti** della stessa pagina (tesseract vs layer) e segnala le pagine a bassa concordanza (figure, scansioni degradate).
+- Utile per: risolvere `[illeggibile]`, validare refusi, fare da "quality check" indipendente dall'LLM.
+- Vedi anche `scripts/split_pdf.py` (split vettoriale, conserva il layer testo) e `scripts/revise_extract.py` (pulizia del markdown: paragrafi, note, titoli).
 
 ### Step 2 — Split in capitoli
 
@@ -112,7 +138,7 @@ Se il dry-run mostra tagli corretti, ri-esegui senza `--dry-run`. Strategie disp
 
 ### Step 3 — Sintesi per capitolo (agenti paralleli)
 
-**Cuore del metodo.** Lancia sotto-agenti `opus` in **parallelo e background**, uno ogni **1-2 capitoli** (max 3 solo se molto corti). *Più agenti piccoli > pochi agenti grandi*.
+**Cuore del metodo.** Lancia sotto-agenti AI (il modello più capace disponibile) in **parallelo e background**, uno ogni **1-2 capitoli** (max 3 solo se molto corti). *Più agenti piccoli > pochi agenti grandi*.
 
 **Ogni agente esegue 3 fasi (vedi `prompts/synth_chapter.md`):**
 1. **Estrazione concetti** — tesi, concetti chiave, citazioni, nomi, riferimenti, struttura
@@ -235,9 +261,10 @@ Se l'utente vuole **confrontare**, produci versioni multiple in file separati e 
 - **Non usare PNG per il quality-check testo:** i PNG possono tagliare testo ai bordi. Per confrontare PDF↔md leggi il PDF **direttamente** con `fitz.get_text()`.
 - **Capitoli "fantasma":** è successo che un intero capitolo (o il corpo del cap. 1) fosse **assente** dall'estratto/sintesi e andasse ricostruito. In fase di verifica controlla che **tutti** i capitoli ci siano e siano pieni.
 - **Sintesi ≠ rielaborazione:** non confondere lo Scenario A con il B (§3).
-- **Granularità agenti:** preferisci sempre più agenti piccoli, paralleli, in background, modello opus.
+- **Granularità agenti:** preferisci sempre più agenti piccoli, paralleli, in background (il modello più capace disponibile).
 - **Nomi file con Unicode:** apostrofi tipografici (`'`), ellissi (`…`), accenti possono far fallire `Read` per NFC/NFD → leggi con `cat` via shell come eccezione.
 - **PDF nativo silenziosamente "ibrido":** alcuni PDF hanno layer testo solo su alcune pagine. Se `full_to_text.py` produce sezioni vuote, passa a `ocr_to_text.py`.
+- **OCR: prima la CPU, poi l'LLM.** Per lettura/validazione del testo usa **tesseract in CPU** (`scripts/ocr_crosscheck.py`), non un LLM multimodale: è più veloce, gratis, riproducibile e non dipende da modello/GPU. Riserva l'LLM alla **comprensione e pulizia del testo** (e all'arbitraggio tra due letture). Il repo resta **agnostico rispetto al modello**: eventuali LLM (cloud o locali) si configurano **solo** via `.env` (vedi `.env.example`), mai hardcoded.
 
 ---
 
@@ -274,6 +301,12 @@ python scripts/pipeline.py finalize books/MioLibro
 # OCR per scansione
 python scripts/ocr_to_text.py books/Scan.pdf
 python scripts/split_chapters.py "books/Scan/Scan - estratto.md" --by-pages 30
+
+# Cross-check OCR in CPU (seconda lettura tesseract + confronto, senza LLM)
+python scripts/ocr_crosscheck.py --mode full --dpi 300 \
+  --pdf "books/MioLibro/MioLibro - split.pdf" \
+  --current "books/MioLibro/MioLibro - estratto.md" \
+  --out "books/MioLibro/quality_check cross-ocr.md"
 
 # Solo quality check
 python scripts/quality_check.py \

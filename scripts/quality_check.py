@@ -431,13 +431,16 @@ def main() -> None:
     ap.add_argument("--json", action="store_true", help="Stampa anche JSON crudo")
     ap.add_argument("--llm", action="store_true",
                     help="Aggiungi giudizio LLM (Anthropic, richiede API key)")
-    ap.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", "claude-sonnet-4-6"))
+    ap.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", ""),
+                    help="modello LLM da usare con --llm (nessun default: richiesto)")
     args = ap.parse_args()
 
     if not args.original.exists():
         sys.exit(f"Errore: originale non trovato: {args.original}")
     if not args.synthesis.exists():
         sys.exit(f"Errore: sintesi non trovata: {args.synthesis}")
+    if args.llm and not args.llm_model:
+        sys.exit("Errore: --llm richiede un modello: passa --llm-model oppure setta LLM_MODEL nel .env.")
 
     result = evaluate(args.original, args.synthesis,
                       args.ratio_min, args.ratio_max, args.threshold)
