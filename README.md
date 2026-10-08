@@ -186,7 +186,7 @@ Vedi [`.env.example`](.env.example) per la lista completa. Gruppi principali:
 - **Image enhancement**: `ENHANCE_CONTRAST`, `SHARPEN`, `GRAYSCALE`, …
 - **OCR**: `OCR_ENABLED`, `OCR_LANGUAGE`, `OCR_DPI`, `OCR_DESKEW`
 - **Quality check**: `QC_RATIO_MIN`, `QC_RATIO_MAX`, `QC_COVERAGE_THRESHOLD`
-- **LLM opzionale** (OpenAI-compatibile): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_EXTRA_PARAMS`
+- **LLM opzionale** (OpenAI-compatibile): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_EXTRA_PARAMS`, `LLM_TIMEOUT`, `LLM_MAX_TOKENS`
 
 ---
 
