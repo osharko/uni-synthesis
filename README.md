@@ -221,6 +221,9 @@ uni-synthesis/
 ├── scripts/
 │   ├── full_to_text.py
 │   ├── ocr_to_text.py
+│   ├── split_pdf.py          # doppie pagine → singole (vettoriale)
+│   ├── revise_extract.py     # pulizia markdown (paragrafi, note, titoli)
+│   ├── ocr_crosscheck.py     # seconda lettura OCR CPU (tesseract) + confronto
 │   ├── split_chapters.py
 │   ├── quality_check.py
 │   ├── report.py

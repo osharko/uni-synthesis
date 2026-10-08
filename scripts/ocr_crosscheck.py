@@ -142,12 +142,36 @@ def load_estratto_pages(path: Path) -> dict[int, str]:
 
 
 def run_full(doc, estratto_pages: dict[int, str], pages: list[int],
-             dpi: int, lang: str, psm: int, top: int = 40) -> str:
-    """Seconda lettura (tesseract) vs layer OCR dell'estratto, PAGINA per PAGINA.
+             dpi: int, lang: str, psm: int, top: int = 40,
+             current: str | None = None) -> str:
+    """Seconda lettura (tesseract) vs layer dell'estratto, PAGINA per PAGINA.
 
-    Nessun allineamento: si confrontano le due letture della STESSA pagina
-    (il layer dell'estratto contiene i marker `<!-- page N -->`).
+    Nessun allineamento per il confronto col layer (stessa pagina). Se `current`
+    è fornito, mappa ogni pagina al testo attuale con il ponte dell'estratto
+    (finestra corta, monotona) e riporta anche la similarità tesseract↔attuale.
     """
+    lines = [l for l in current.split("\n") if l.strip()] if current else []
+    line_tok = [set(tokens(l)) - STOP for l in lines]
+    windows: dict[int, tuple[int, int]] = {}
+    if lines:
+        ptr = 0
+        first = True
+        for pno in sorted(pages):
+            ot = set(tokens(estratto_pages.get(pno + 1, ""))) - STOP
+            if not ot:
+                windows[pno] = (ptr, ptr)
+                continue
+            # prima pagina: ricerca globale; poi finestra corta e monotona
+            lim = len(lines) if first else min(len(lines), ptr + 40)
+            best, bj = 0, ptr
+            for j in range(ptr, lim):
+                ov = len(ot & line_tok[j])
+                if ov > best:
+                    best, bj = ov, j
+            windows[pno] = (ptr, bj)
+            ptr = bj + 1 if bj + 1 > ptr else ptr + 1
+            first = False
+
     rows = []
     for pno in sorted(pages):
         ref = set(tokens(estratto_pages.get(pno + 1, ""))) - STOP
@@ -157,20 +181,34 @@ def run_full(doc, estratto_pages: dict[int, str], pages: list[int],
         only_ocr = sorted(t for t in (ocr - ref) if len(t) >= 5)
         only_ref = sorted(t for t in (ref - ocr) if len(t) >= 5)
         div = len(only_ocr) + len(only_ref)
-        union = len(ocr | ref) or 1
-        ratio = 1.0 - div / union
-        rows.append((ratio, pno + 1, div, len(ocr), len(ref), only_ocr, only_ref))
+        ratio = 1.0 - div / ((len(ocr | ref)) or 1)
+        ratio_cur = None
+        if lines:
+            a, b = windows.get(pno, (0, 0))
+            if a < len(lines):
+                b = max(a, min(b, len(lines) - 1))
+                cur: set[str] = set()
+                for j in range(a, b + 1):
+                    cur |= line_tok[j]
+                d2 = len([t for t in (ocr - cur) if len(t) >= 5]) + \
+                    len([t for t in (cur - ocr) if len(t) >= 5])
+                ratio_cur = 1.0 - d2 / ((len(ocr | cur)) or 1)
+        rows.append((ratio, ratio_cur, pno + 1, div, len(ocr), len(ref), only_ocr, only_ref))
 
-    valid = [r for r in rows if r[3] > 0 and r[4] > 0]
+    valid = [r for r in rows if r[4] > 0 and r[5] > 0]
     low = [r for r in valid if r[0] < 0.5]
-    avg_ratio = sum(r[0] for r in valid) / max(1, len(valid))
+    avg = sum(r[0] for r in valid) / max(1, len(valid))
     out = ["# Cross-check OCR (CPU) — report completo\n"]
     out.append(f"- Pagine confrontate: {len(rows)} (con testo da entrambe le letture: {len(valid)})")
-    out.append(f"- Similarità media tesseract↔layer: {avg_ratio:.3f}")
+    out.append(f"- Similarità media tesseract↔layer: {avg:.3f}")
+    vc = [r[1] for r in valid if r[1] is not None]
+    if vc:
+        out.append(f"- Similarità media tesseract↔testo attuale: {sum(vc) / len(vc):.3f}")
     out.append(f"- Pagine a bassa concordanza (<0.5): {len(low)}")
     out.append("\n## Pagine a bassa concordanza (da rivedere: figure, degradate, o errori)\n")
-    for ratio, pg, div, no, nr, oo, orf in sorted(valid, key=lambda r: r[0])[:top]:
-        out.append(f"\n### pagina {pg} (similarità {ratio:.2f}, divergenze {div}; {no} vs {nr} token)\n")
+    for ratio, ratio_cur, pg, div, no, nr, oo, orf in sorted(valid, key=lambda r: r[0])[:top]:
+        rc = f", ↔attuale {ratio_cur:.2f}" if ratio_cur is not None else ""
+        out.append(f"\n### pagina {pg} (↔layer {ratio:.2f}{rc}, divergenze {div}; {no} vs {nr} token)\n")
         out.append(f"- solo in tesseract: {', '.join(oo[:25]) or '—'}\n")
         out.append(f"- solo nel layer: {', '.join(orf[:25]) or '—'}\n")
     return "\n".join(out)
@@ -214,7 +252,8 @@ def main() -> None:
             sys.exit("Errore: modalità full richiede --estratto (markdown con marker '<!-- page N -->').")
         estratto_pages = load_estratto_pages(args.estratto)
         pages = parse_pages(args.pages, len(doc))
-        report = run_full(doc, estratto_pages, pages, args.dpi, args.lang, args.psm)
+        report = run_full(doc, estratto_pages, pages, args.dpi, args.lang, args.psm,
+                          current=(current or None))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(report, encoding="utf-8")
