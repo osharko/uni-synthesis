@@ -60,23 +60,37 @@ WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ']{3,}")
 _WORD_ANY_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ']+")
 # Punteggiatura dopo cui una maiuscola è di inizio frase (non nome proprio).
 _SENT_END = set(".?!…:;»”)]")
+# Suffissi tipici di forme verbali/avverbiali: una maiuscola così è quasi
+# sempre una parola comune a inizio frase, non un nome proprio.
+_NON_NAME_SUFFIXES = ("mente", "ando", "endo", "eremmo", "ereste", "erebbe",
+                      "erebbero", "iranno", "issimo")
 
 
 def extract_proper_names(text: str) -> list[str]:
-    """Nomi propri = parole capitalizzate NON a inizio frase/riga.
+    """Nomi propri = parole capitalizzate NON a inizio frase/riga e non comuni.
 
-    Esclude: la prima parola di ogni riga (titoli/paragrafi), le parole dopo
-    punteggiatura di fine frase o di chiusura virgolette/parentesi, e le
-    stopword italiane capitalizzate (`Il`, `La`, `Questo`, ...). Molto meno
-    rumoroso della vecchia regex basata solo sul punto.
+    Criterio (data-driven, nessun dizionario esterno):
+      1. prima parola di una riga (titoli/paragrafi) → scartata;
+      2. parola dopo punteggiatura di fine frase/chiusura → scartata;
+      3. stopword italiane e parole tutte MAIUSCOLE → scartate;
+      4. **parola la cui forma minuscola ricorre altrove nel testo** → scartata
+         (se la trovi anche minuscola, è una parola comune, non un nome);
+      5. suffissi verbali/avverbiali tipici (-mente, -ando, -endo, -eremmo, …)
+         → scartati.
     """
+    lower_tokens = {m.group(0).lower() for m in _WORD_ANY_RE.finditer(text)
+                    if m.group(0)[:1].islower()}
     names: set[str] = set()
     for m in _WORD_ANY_RE.finditer(text):
         w = m.group(0)
         if len(w) < 3 or not w[0].isupper() or w.lower() in STOPWORDS_IT:
             continue
         if w.isupper():
-            continue  # MAIUSCOLO tutto: titoli, etichette di figure, acronimi, numerali
+            continue  # titoli, etichette di figure, acronimi, numerali
+        if w.lower() in lower_tokens:
+            continue  # ricorre anche minuscolo → parola comune
+        if w.lower().endswith(_NON_NAME_SUFFIXES):
+            continue
         line_start = text.rfind("\n", 0, m.start()) + 1
         if not text[line_start:m.start()].strip():
             continue  # prima parola della riga → inizio frase/paragrafo
