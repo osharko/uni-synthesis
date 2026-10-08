@@ -145,7 +145,9 @@ python scripts/export_pdf.py books/MioLibro.md --toc
 
 ### C) Quality check con LLM (opzionale)
 ```bash
-export ANTHROPIC_API_KEY=sk-...
+# qualsiasi endpoint OpenAI-compatibile (locale o cloud)
+export LLM_BASE_URL="http://127.0.0.1:8080/v1"
+export LLM_MODEL="<nome-modello>"
 python scripts/pipeline.py finalize books/MioLibro --llm
 ```
 

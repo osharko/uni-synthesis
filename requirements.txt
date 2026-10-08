@@ -3,5 +3,6 @@ Pillow>=10
 ocrmypdf>=16
 python-dotenv>=1
 numpy>=1.26
-# opzionale: usato solo se quality_check.py viene lanciato con --llm
-anthropic>=0.40
+# Nota: il giudizio LLM di quality_check.py (--llm) usa un endpoint
+# OpenAI-compatibile via urllib (nessuna dipendenza aggiuntiva).
+# Configurazione in .env: LLM_BASE_URL / LLM_API_KEY / LLM_MODEL.

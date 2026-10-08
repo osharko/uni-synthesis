@@ -17,8 +17,9 @@ Esempi:
       --synthesis "books/MioLibro.md" \\
       --chapters-dir "books/MioLibro/"
 
-  # con giudizio LLM (richiede ANTHROPIC_API_KEY)
-  python scripts/quality_check.py ... --llm
+  # con giudizio LLM (endpoint OpenAI-compatibile, locale o cloud; vedi .env)
+  python scripts/quality_check.py ... --llm \
+      --llm-base-url http://127.0.0.1:8080/v1 --llm-model <nome-modello>
 
 Output: report markdown stampato a stdout o scritto con --out.
 Exit code: 0 se passa, 2 se sotto soglia.
@@ -30,6 +31,7 @@ import json
 import os
 import re
 import sys
+import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -377,15 +379,10 @@ def format_report(result: dict, per_chapter: list[dict] | None) -> str:
 # ---------------------------------------------------------------------------
 # LLM opzionale (giudizio semantico finale)
 # ---------------------------------------------------------------------------
-def llm_judgement(result: dict, original: str, synthesis: str, model: str) -> str:
-    try:
-        from anthropic import Anthropic
-    except ImportError:
-        return "_(anthropic non installato — installa con `pip install anthropic`)_"
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return "_(ANTHROPIC_API_KEY non settato — skip giudizio LLM)_"
-
+def llm_judgement(result: dict, original: str, synthesis: str,
+                  base_url: str, api_key: str, model: str,
+                  extra: dict | None = None) -> str:
+    """Giudizio semantico via QUALSIASI endpoint OpenAI-compatibile (locale o cloud)."""
     missing_summary = []
     for k in ("keywords", "proper_names", "quotes", "bib_refs", "chapters"):
         items = result["missing"][k]
@@ -407,14 +404,42 @@ Rispondi in italiano e in markdown, con queste sezioni:
 1. **Vere omissioni** (cose realmente assenti e importanti per lo studio del testo)
 2. **Falsi positivi** (presenti come parafrasi/sinonimi)
 3. **Azioni consigliate** (cosa integrare, max 5 voci concrete)
-"""
-    client = Anthropic(api_key=api_key)
-    msg = client.messages.create(
-        model=model,
-        max_tokens=1500,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return msg.content[0].text
+
+Rispondi direttamente con le tre sezioni, senza mostrare un ragionamento interno."""
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 1200,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if extra:
+        payload.update(extra)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    data = json.dumps(payload).encode()
+    last = "né risposta né errore"
+    for _ in range(3):  # alcuni server restituiscono a volte una risposta vuota: si ritenta
+        req = urllib.request.Request(url, data=data, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                resp = json.load(r)
+        except Exception as e:  # noqa: BLE001
+            last = f"errore: {e}"
+            continue
+        try:
+            ch = resp["choices"][0]
+            content = (ch.get("message", {}).get("content") or "").strip()
+        except (KeyError, IndexError, TypeError, AttributeError):
+            last = f"risposta inattesa: {json.dumps(resp)[:200]}"
+            continue
+        if content:
+            return content
+        last = f"risposta vuota (finish_reason={ch.get('finish_reason')})"
+    return (f"_(giudizio LLM non disponibile dopo 3 tentativi: {last}. "
+            f"Se persiste, prova ad alzare max_tokens o a disattivare il thinking con "
+            f"LLM_EXTRA_PARAMS='{{\"enable_thinking\": false}}')_")
 
 
 def main() -> None:
@@ -430,17 +455,27 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=None, help="Salva report markdown qui")
     ap.add_argument("--json", action="store_true", help="Stampa anche JSON crudo")
     ap.add_argument("--llm", action="store_true",
-                    help="Aggiungi giudizio LLM (Anthropic, richiede API key)")
-    ap.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", ""),
-                    help="modello LLM da usare con --llm (nessun default: richiesto)")
+                    help="Aggiungi giudizio LLM (endpoint OpenAI-compatibile, locale o cloud)")
+    ap.add_argument("--llm-base-url",
+                    default=os.environ.get("LLM_BASE_URL") or os.environ.get("LOCAL_LLM_BASE_URL") or "",
+                    help="Base URL OpenAI-compatibile (es. http://127.0.0.1:8080/v1)")
+    ap.add_argument("--llm-api-key",
+                    default=os.environ.get("LLM_API_KEY") or os.environ.get("LOCAL_LLM_API_KEY") or "",
+                    help="API key del server (opzionale)")
+    ap.add_argument("--llm-model",
+                    default=os.environ.get("LLM_MODEL") or os.environ.get("LOCAL_LLM_MODEL") or "",
+                    help="nome/id del modello servito")
+    ap.add_argument("--llm-extra", default=os.environ.get("LLM_EXTRA_PARAMS", ""),
+                    help="parametri extra in JSON, es. '{\"enable_thinking\": false}'")
     args = ap.parse_args()
 
     if not args.original.exists():
         sys.exit(f"Errore: originale non trovato: {args.original}")
     if not args.synthesis.exists():
         sys.exit(f"Errore: sintesi non trovata: {args.synthesis}")
-    if args.llm and not args.llm_model:
-        sys.exit("Errore: --llm richiede un modello: passa --llm-model oppure setta LLM_MODEL nel .env.")
+    if args.llm and (not args.llm_base_url or not args.llm_model):
+        sys.exit("Errore: --llm richiede base URL e modello "
+                 "(--llm-base-url/--llm-model oppure .env: LLM_BASE_URL/LLM_MODEL o LOCAL_LLM_*).")
 
     result = evaluate(args.original, args.synthesis,
                       args.ratio_min, args.ratio_max, args.threshold)
@@ -452,7 +487,12 @@ def main() -> None:
     if args.llm:
         synth_text = args.synthesis.read_text(encoding="utf-8")
         orig_text = args.original.read_text(encoding="utf-8")
-        verdict = llm_judgement(result, orig_text, synth_text, args.llm_model)
+        try:
+            extra = json.loads(args.llm_extra) if args.llm_extra.strip() else None
+        except json.JSONDecodeError as e:
+            sys.exit(f"Errore: --llm-extra non è JSON valido: {e}")
+        verdict = llm_judgement(result, orig_text, synth_text,
+                                args.llm_base_url, args.llm_api_key, args.llm_model, extra)
         report += "\n## Giudizio LLM\n\n" + verdict + "\n"
 
     if args.out:

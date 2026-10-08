@@ -162,7 +162,7 @@ python scripts/pipeline.py finalize "books/<Libro>"
 #   books/<Libro>/REPORT.md          (dimensioni, ratio, capitoli, durata)
 ```
 
-Aggiungi `--llm` se vuoi un giudizio semantico finale tramite Anthropic API (richiede `ANTHROPIC_API_KEY` in env).
+Aggiungi `--llm` se vuoi un giudizio semantico finale tramite un endpoint **OpenAI-compatibile** (locale o cloud; configurazione in `.env`: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, opz. `LLM_EXTRA_PARAMS`).
 
 ### Step 6 — Export PDF (opzionale)
 
@@ -215,7 +215,7 @@ Score complessivo pesato (0-100%). I pesi si ridistribuiscono automaticamente qu
 
 Output: report markdown con elenco dei mancanti (keyword, nomi, citazioni, capitoli). Exit code 0 (passed) o 2 (failed).
 
-**Opzionale `--llm`:** dopo il calcolo deterministico, un LLM Anthropic legge le omissioni segnalate + 4K caratteri della sintesi e separa **vere omissioni** da **falsi positivi** (parafrasi, sinonimi).
+**Opzionale `--llm`:** dopo il calcolo deterministico, un LLM (endpoint OpenAI-compatibile, locale o cloud) legge le omissioni segnalate + 4K caratteri della sintesi e separa **vere omissioni** da **falsi positivi** (parafrasi, sinonimi).
 
 ---
 
@@ -228,7 +228,7 @@ Quando l'utente è in **Claude Code** o **opencode** e ti chiede di "fare le sin
 3. **Prompt da usare:** `prompts/synth_chapter.md`, sostituendo `{ESTRATTO_PATH}` e `{SINTESI_PATH}`.
 4. **Dopo le sintesi:** lancia un round di verifica con `prompts/verify_chapter.md` (paralleli) — opzionale ma consigliato.
 5. **Amalgama:** un singolo agente con `prompts/amalgamate.md`.
-6. **Finalizza:** `python scripts/pipeline.py finalize books/<Libro>` (o con `--llm` se l'utente ha le API key).
+6. **Finalizza:** `python scripts/pipeline.py finalize books/<Libro>` (o con `--llm` se è configurato un endpoint LLM nel `.env`).
 7. **Mostra il REPORT.md** all'utente.
 
 ---
@@ -274,7 +274,7 @@ Se l'utente vuole **confrontare**, produci versioni multiple in file separati e 
 ```bash
 pip install -r requirements.txt
 # include: PyMuPDF, Pillow, ocrmypdf, python-dotenv, numpy
-# opzionale: anthropic (solo se --llm)
+# opzionale: --llm usa un endpoint OpenAI-compatibile via urllib (nessuna dipendenza extra)
 ```
 
 ### Sistema (per OCR)

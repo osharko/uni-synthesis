@@ -90,8 +90,9 @@ python scripts/quality_check.py \
   --chapters-dir books/MioLibro \
   --out books/MioLibro/quality_check.md
 
-# Con giudizio LLM (richiede ANTHROPIC_API_KEY in env)
-python scripts/quality_check.py ... --llm
+# Con giudizio LLM (endpoint OpenAI-compatibile, locale o cloud; vedi .env)
+python scripts/quality_check.py ... --llm \
+  --llm-base-url http://127.0.0.1:8080/v1 --llm-model <nome-modello>
 
 # Solo report
 python scripts/report.py --book books/MioLibro
@@ -185,7 +186,7 @@ Vedi [`.env.example`](.env.example) per la lista completa. Gruppi principali:
 - **Image enhancement**: `ENHANCE_CONTRAST`, `SHARPEN`, `GRAYSCALE`, …
 - **OCR**: `OCR_ENABLED`, `OCR_LANGUAGE`, `OCR_DPI`, `OCR_DESKEW`
 - **Quality check**: `QC_RATIO_MIN`, `QC_RATIO_MAX`, `QC_COVERAGE_THRESHOLD`
-- **LLM opzionale**: `ANTHROPIC_API_KEY`, `LLM_MODEL`
+- **LLM opzionale** (OpenAI-compatibile): `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_EXTRA_PARAMS`
 
 ---
 
