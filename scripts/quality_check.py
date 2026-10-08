@@ -381,7 +381,8 @@ def format_report(result: dict, per_chapter: list[dict] | None) -> str:
 # ---------------------------------------------------------------------------
 def llm_judgement(result: dict, original: str, synthesis: str,
                   base_url: str, api_key: str, model: str,
-                  extra: dict | None = None) -> str:
+                  extra: dict | None = None, timeout: int = 600,
+                  max_tokens: int = 1200) -> str:
     """Giudizio semantico via QUALSIASI endpoint OpenAI-compatibile (locale o cloud)."""
     missing_summary = []
     for k in ("keywords", "proper_names", "quotes", "bib_refs", "chapters"):
@@ -410,7 +411,7 @@ Rispondi direttamente con le tre sezioni, senza mostrare un ragionamento interno
     payload = {
         "model": model,
         "temperature": 0,
-        "max_tokens": 1200,
+        "max_tokens": max_tokens,
         "messages": [{"role": "user", "content": prompt}],
     }
     if extra:
@@ -423,7 +424,7 @@ Rispondi direttamente con le tre sezioni, senza mostrare un ragionamento interno
     for _ in range(3):  # alcuni server restituiscono a volte una risposta vuota: si ritenta
         req = urllib.request.Request(url, data=data, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=300) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 resp = json.load(r)
         except Exception as e:  # noqa: BLE001
             last = f"errore: {e}"
@@ -467,6 +468,10 @@ def main() -> None:
                     help="nome/id del modello servito")
     ap.add_argument("--llm-extra", default=os.environ.get("LLM_EXTRA_PARAMS", ""),
                     help="parametri extra in JSON, es. '{\"enable_thinking\": false}'")
+    ap.add_argument("--llm-timeout", type=int, default=int(os.environ.get("LLM_TIMEOUT", 600)),
+                    help="timeout in secondi per la chiamata LLM (default 600)")
+    ap.add_argument("--llm-max-tokens", type=int, default=int(os.environ.get("LLM_MAX_TOKENS", 1200)),
+                    help="max_tokens della risposta LLM (default 1200)")
     args = ap.parse_args()
 
     if not args.original.exists():
@@ -492,7 +497,8 @@ def main() -> None:
         except json.JSONDecodeError as e:
             sys.exit(f"Errore: --llm-extra non è JSON valido: {e}")
         verdict = llm_judgement(result, orig_text, synth_text,
-                                args.llm_base_url, args.llm_api_key, args.llm_model, extra)
+                                args.llm_base_url, args.llm_api_key, args.llm_model,
+                                extra, args.llm_timeout, args.llm_max_tokens)
         report += "\n## Giudizio LLM\n\n" + verdict + "\n"
 
     if args.out:
