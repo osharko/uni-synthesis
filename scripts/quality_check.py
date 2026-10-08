@@ -57,10 +57,36 @@ STOPWORDS_IT = {
 }
 
 WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ']{3,}")
-# Nomi propri = parole capitalizzate non di inizio frase. Euristica: dopo non-punto.
-PROPER_NAME_RE = re.compile(
-    r"(?<![\.\?\!]\s)\b([A-ZÀ-Ý][a-zà-ÿ']{2,}(?:\s+[A-ZÀ-Ý][a-zà-ÿ']{2,}){0,3})\b"
-)
+_WORD_ANY_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ']+")
+# Punteggiatura dopo cui una maiuscola è di inizio frase (non nome proprio).
+_SENT_END = set(".?!…:;»”)]")
+
+
+def extract_proper_names(text: str) -> list[str]:
+    """Nomi propri = parole capitalizzate NON a inizio frase/riga.
+
+    Esclude: la prima parola di ogni riga (titoli/paragrafi), le parole dopo
+    punteggiatura di fine frase o di chiusura virgolette/parentesi, e le
+    stopword italiane capitalizzate (`Il`, `La`, `Questo`, ...). Molto meno
+    rumoroso della vecchia regex basata solo sul punto.
+    """
+    names: set[str] = set()
+    for m in _WORD_ANY_RE.finditer(text):
+        w = m.group(0)
+        if len(w) < 3 or not w[0].isupper() or w.lower() in STOPWORDS_IT:
+            continue
+        if w.isupper():
+            continue  # MAIUSCOLO tutto: titoli, etichette di figure, acronimi, numerali
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        if not text[line_start:m.start()].strip():
+            continue  # prima parola della riga → inizio frase/paragrafo
+        j = m.start() - 1
+        while j >= line_start and text[j] in " \t":
+            j -= 1
+        if j < line_start or text[j] in _SENT_END:
+            continue  # preceduta da fine frase o chiusura
+        names.add(w)
+    return sorted(names)
 # Anno tipo 1995, 1995a, (1995), 1995-2010
 YEAR_RE = re.compile(r"\b(1[5-9]\d{2}|20\d{2})\b")
 # Citazioni con virgolette tipografiche italiane « », “ ”, " "
@@ -115,7 +141,7 @@ def compute_metrics(text: str, top_k: int = 100) -> Metrics:
     m.unique_words = len(set(content))
     counter = Counter(content)
     m.top_keywords = counter.most_common(top_k)
-    m.proper_names = sorted(set(PROPER_NAME_RE.findall(text)))
+    m.proper_names = extract_proper_names(text)
     m.years = sorted(set(YEAR_RE.findall(text)))
     m.quotes = QUOTE_RE.findall(text)
     m.bib_refs = sorted(set(BIB_REF_RE.findall(text)))

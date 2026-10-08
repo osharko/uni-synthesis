@@ -203,7 +203,7 @@ Struttura `Obsidian/Unich/<Corso>/<Libro>/`:
 |---|---|
 | **Ratio di sintesi** | parole originale / parole sintesi, target 1/5..1/8 |
 | **Copertura keyword** | top-50 keyword (TF semplice senza stopwords) presenti nella sintesi |
-| **Copertura nomi propri** | regex `[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*`, esclusi inizi frase |
+| **Copertura nomi propri** | euristica: maiuscole **non a inizio frase/riga**, escluse stopword italiane e parole tutte MAIUSCOLE (titoli/etichette) |
 | **Copertura citazioni** | citazioni `«…»` di cui 30+ caratteri compaiono nella sintesi |
 | **Copertura riferimenti bibliografici** | pattern `Autore (YYYY)` o `(Autore, YYYY)` |
 | **Capitoli presenti** | confronto tra heading dei capitoli |
