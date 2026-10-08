@@ -3,7 +3,8 @@ __pycache__/
 .env
 .venv/
 venv/
-books/*/
+books/*
 !books/.gitkeep
 *.pdf
+scripts/_pdf_style.css
 .DS_Store

@@ -42,7 +42,7 @@ DEFAULT_CSS = REPO / "scripts" / "_pdf_style.css"
 PANDOC_BASE_ARGS = [
     "--standalone",
     "--from", "markdown+yaml_metadata_block+tex_math_dollars+raw_tex+pipe_tables"
-              "+fenced_divs+attributes+definition_lists",
+              "+fenced_divs+bracketed_spans+definition_lists",
     "-V", "lang=it",
     "-V", "geometry:margin=2.2cm",
 ]

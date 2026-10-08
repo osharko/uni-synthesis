@@ -50,7 +50,9 @@ def collect(book_dir: Path) -> dict:
     pdf = next(iter(sorted(parent.glob(f"{name}.pdf"))), None) or next(
         iter(sorted(book_dir.glob("*.pdf"))), None
     )
-    extracted = find_one(book_dir, " - estratto.md")
+    extracted = (book_dir / f"{name} - estratto.md")
+    if not extracted.exists():
+        extracted = find_one(book_dir, " - estratto.md")
     synthesis = (parent / f"{name}.md")
     if not synthesis.exists():
         synthesis = find_one(book_dir, ".md") or None
