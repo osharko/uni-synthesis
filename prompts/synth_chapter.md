@@ -1,7 +1,7 @@
 # Prompt — Sintesi di un capitolo (3 fasi)
 
 > **Variabili da sostituire:** `{ESTRATTO_PATH}`, `{SINTESI_PATH}`.
-> Modello consigliato: **opus**. Lancia un agente per ogni 1-2 capitoli.
+> Modello consigliato: **il più capace disponibile** (nessun modello è imposto; l'opzionale è in `.env`). Lancia un agente per ogni 1-2 capitoli.
 
 ---
 

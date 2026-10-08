@@ -32,7 +32,7 @@
            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
            ║  AGENTI AI IN PARALLELO   ║
            ║  prompts/synth_chapter.md ║
-           ║  (3 fasi, opus, 1-2 cap)  ║
+           ║  (3 fasi, 1-2 cap)        ║
            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                          │
                          ▼
@@ -74,7 +74,7 @@
 |---|---|---|
 | Estrazione testo | `full_to_text.py` | 10-30 s |
 | Split capitoli | `split_chapters.py` | < 1 s |
-| Sintesi capitoli (8-12 agenti paralleli opus) | AI | 15-30 min |
+| Sintesi capitoli (8-12 agenti paralleli) | AI | 15-30 min |
 | Verifica incrociata | AI | 10-20 min |
 | Amalgama | AI (1 agente) | 3-5 min |
 | Quality check + report | Python | 5-15 s |
@@ -114,6 +114,19 @@ cp ~/Downloads/MioLibro.pdf books/
 # 2. Prepara estratto + capitoli
 python scripts/pipeline.py prepare books/MioLibro.pdf --native --skip-empty
 
+# 2.bis (consigliato) Validazione OCR in CPU: seconda lettura con tesseract
+#        e confronto col markdown. Nessun LLM. Utile per [illeggibile] e refusi.
+#   a) mirato su specifici frammenti (JSON con page/before/after):
+python scripts/ocr_crosscheck.py --mode fragments \
+    --pdf "books/MioLibro/MioLibro - split.pdf" \
+    --current "books/MioLibro/MioLibro - estratto.md" \
+    --fragments frammenti.json --out /tmp/cross_frag.md
+#   b) completo: concordanza pagina-per-pagina (tesseract ↔ layer dell'estratto):
+python scripts/ocr_crosscheck.py --mode full --dpi 300 \
+    --pdf "books/MioLibro/MioLibro - split.pdf" \
+    --estratto "books/MioLibro/MioLibro - estratto.md" \
+    --out "books/MioLibro/quality_check cross-ocr.md"
+
 # 3. Lancia gli agenti AI nella tua CLI agentic preferita:
 #    Claude Code / opencode / Cursor / Aider → "Fai le sintesi secondo AGENTS.md"
 #
@@ -132,7 +145,9 @@ python scripts/export_pdf.py books/MioLibro.md --toc
 
 ### C) Quality check con LLM (opzionale)
 ```bash
-export ANTHROPIC_API_KEY=sk-...
+# qualsiasi endpoint OpenAI-compatibile (locale o cloud)
+export LLM_BASE_URL="http://127.0.0.1:8080/v1"
+export LLM_MODEL="<nome-modello>"
 python scripts/pipeline.py finalize books/MioLibro --llm
 ```
 
@@ -155,7 +170,8 @@ cp "books/MioLibro.md"                       "$TARGET/Sintesi. MioLibro.md"
 | Estratto ha sezioni vuote / brutte tabelle | PDF probabilmente "ibrido" → usa `ocr_to_text.py` con `--skip-ocr` per ri-renderizzare |
 | Split capitoli sbaglia tagli | Usa `--anchors file.txt` con titoli esatti, o `--by-pages N` come fallback |
 | Quality check sotto soglia ma sintesi sembra buona | Rilancia con `--llm` per filtrare falsi positivi |
-| OCR molto rumoroso (scan CamScanner) | Trascrivi pagina per pagina con agenti opus usando `prompts/transcribe_page.md` |
+| OCR molto rumoroso (scan CamScanner) | Trascrivi pagina per pagina con un agente AI (modello più capace) usando `prompts/transcribe_page.md` |
+| Frammenti `[illeggibile]` o refusi dubbi | Seconda lettura **CPU** con `scripts/ocr_crosscheck.py` (tesseract) e confronto; l'LLM arbitra solo sul testo |
 | Capitolo "fantasma" assente nella sintesi | È successo storicamente — lancia un agente fix dedicato sull'estratto del capitolo mancante |
 | Formule mate trasformate in testo piatto dall'OCR | Trascrivi con `prompts/transcribe_page.md` (agenti AI ricostruiscono in LaTeX leggendo l'immagine pagina) |
 | Export PDF: math non viene renderizzato | Verifica engine: `xelatex`/`typst` rendono nativamente; `weasyprint` richiede `--mathjax` (già di default in `export_pdf.py`) |
