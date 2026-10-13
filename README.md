@@ -77,6 +77,16 @@ python scripts/full_to_text.py books/MioLibro.pdf --exclude 1,2,250-260
 python scripts/ocr_to_text.py books/Scan.pdf
 python scripts/ocr_to_text.py books/Scan.pdf --no-split --skip-ocr   # solo enhance
 
+# Scansione degradata con pagine doppie / OCR interlacciato (Scenario C, senza sintesi)
+#   re-OCR CPU per unità (pagina / metà pagina) + strutturazione
+python scripts/ocr_to_markdown.py --pdf books/Scan.pdf \
+  --out "books/Scan/Scan - strutturato.md" --config "books/Scan/_config.json"
+#   … pulizia dei blocchi con prompts/normalize_ocr.md (uno per agente) …
+#   amalgama dei blocchi ripuliti (indice con ancore pandoc, note, "Da verificare")
+python scripts/merge_cleaned_parts.py --dir "books/Scan/puliti" \
+  --out books/Scan.md --title "Titolo" --authors "Autori" \
+  --order 00_frontespizio capitolo_primo capitolo_secondo
+
 # Solo split capitoli (dry-run mostra i tagli senza scrivere)
 python scripts/split_chapters.py "books/MioLibro/MioLibro - estratto.md" --dry-run
 python scripts/split_chapters.py "books/MioLibro/MioLibro - estratto.md" --by-pages 25
@@ -224,6 +234,8 @@ uni-synthesis/
 │   ├── split_pdf.py          # doppie pagine → singole (vettoriale)
 │   ├── revise_extract.py     # pulizia markdown (paragrafi, note, titoli)
 │   ├── ocr_crosscheck.py     # seconda lettura OCR CPU (tesseract) + confronto
+│   ├── ocr_to_markdown.py    # scansione degradata → markdown (re-OCR CPU + strutturazione)
+│   ├── merge_cleaned_parts.py # blocchi ripuliti → markdown finale (indice, note)
 │   ├── split_chapters.py
 │   ├── quality_check.py
 │   ├── report.py
@@ -232,6 +244,7 @@ uni-synthesis/
 │   ├── synth_chapter.md
 │   ├── verify_chapter.md
 │   ├── amalgamate.md
+│   ├── normalize_ocr.md      # pulizia refusi OCR (nessuna sintesi)
 │   └── transcribe_page.md
 └── books/                 ← workspace per ogni libro
 ```

@@ -160,6 +160,24 @@ cp "books/MioLibro/MioLibro - estratto.md"   "$TARGET/MioLibro.md"
 cp "books/MioLibro.md"                       "$TARGET/Sintesi. MioLibro.md"
 ```
 
+### E) Scansione degradata (Scenario C — conversione fedele, senza sintesi)
+
+Quando il PDF ha pagine doppie o un layer OCR interlacciato (CamScanner + OCRmyPDF):
+
+```bash
+# 1) re-OCR CPU per unità (pagina / metà pagina) + strutturazione
+python scripts/ocr_to_markdown.py --pdf "books/Scan.pdf" \
+  --out "books/Scan/Scan - strutturato.md" --config "books/Scan/_config.json"
+
+# 2) pulizia dei blocchi in parallelo con prompts/normalize_ocr.md
+#    (uno o più blocchi per agente; NON riassume)
+
+# 3) amalgama dei blocchi ripuliti (indice con ancore pandoc, note, "Da verificare")
+python scripts/merge_cleaned_parts.py --dir "books/Scan/puliti" \
+  --out "books/Scan.md" --title "<Titolo>" --authors "<Autori>" \
+  --order 00_frontespizio capitolo_primo capitolo_secondo
+```
+
 ---
 
 ## Risoluzione problemi rapidi
@@ -170,9 +188,14 @@ cp "books/MioLibro.md"                       "$TARGET/Sintesi. MioLibro.md"
 | Estratto ha sezioni vuote / brutte tabelle | PDF probabilmente "ibrido" → usa `ocr_to_text.py` con `--skip-ocr` per ri-renderizzare |
 | Split capitoli sbaglia tagli | Usa `--anchors file.txt` con titoli esatti, o `--by-pages N` come fallback |
 | Quality check sotto soglia ma sintesi sembra buona | Rilancia con `--llm` per filtrare falsi positivi |
-| OCR molto rumoroso (scan CamScanner) | Trascrivi pagina per pagina con un agente AI (modello più capace) usando `prompts/transcribe_page.md` |
+| **Pagine doppie lette come una sola / righe interlacciate** | Re-OCR per **unità** (metà pagina) con `scripts/ocr_to_markdown.py` |
+| **Parole stravolte dall'OCR ("ganizzazione"→"gamzzazmxle")** | Alza la risoluzione: `--upscale 2` (default) in `ocr_to_markdown.py` |
+| **Righe di testatina/piè pagina nel corpo** | Vengono rilevate **per ripetizione** e rimosse; aggiungi `running_head_re` nel `_config.json` |
+| **Link dell'indice rotti nel PDF** | Genera gli slug con l'algoritmo di pandoc (`merge_cleaned_parts.py`) e verifica con `pandoc file.md -t html5 \| grep id=` |
+| OCR molto rumoroso (scan CamScanner) | Trascrivi pagina per pagina con un agente AI (modello più capace) usando `prompts/transcribe_page.md`; oppure Scenario C |
 | Frammenti `[illeggibile]` o refusi dubbi | Seconda lettura **CPU** con `scripts/ocr_crosscheck.py` (tesseract) e confronto; l'LLM arbitra solo sul testo |
 | Capitolo "fantasma" assente nella sintesi | È successo storicamente — lancia un agente fix dedicato sull'estratto del capitolo mancante |
 | Formule mate trasformate in testo piatto dall'OCR | Trascrivi con `prompts/transcribe_page.md` (agenti AI ricostruiscono in LaTeX leggendo l'immagine pagina) |
-| Export PDF: math non viene renderizzato | Verifica engine: `xelatex`/`typst` rendono nativamente; `weasyprint` richiede `--mathjax` (già di default in `export_pdf.py`) |
+| Export PDF: math non viene renderizzato | Verifica engine: `xelatex`/`typst` rendono nativamente; `weasyprint` richiede `--math-method=mathjax` (già di default in `export_pdf.py`) |
 | `export_pdf.py` non trova nessun engine | Installa almeno: `pip install weasyprint` (più semplice) **oppure** la catena LaTeX **oppure** typst |
+| `pandoc --pdf-engine=weasyprint` "not found" | weasyprint è nel virtualenv ma non nel PATH: `export_pdf.py` ora passa il percorso dell'eseguibile dell'interprete corrente |

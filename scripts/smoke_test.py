@@ -17,7 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 SCRIPTS = ["full_to_text.py", "ocr_to_text.py", "split_pdf.py", "revise_extract.py",
-           "ocr_crosscheck.py", "split_chapters.py", "quality_check.py",
+           "ocr_crosscheck.py", "ocr_to_markdown.py", "merge_cleaned_parts.py",
+           "split_chapters.py", "quality_check.py",
            "report.py", "pipeline.py", "export_pdf.py"]
 
 

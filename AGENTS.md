@@ -33,12 +33,13 @@
 
 ---
 
-## 3. Due scenari di lavoro
+## 3. Tre scenari di lavoro
 
 - **Scenario A — Sintesi da zero a partire da un libro** (PDF nativo o scansione/OCR). → Sezione 5.
 - **Scenario B — Rielaborazione di una sintesi/appunti già scritti dall'utente** (testo grezzo, refusi da dettatura, da rendere scorrevole **senza stravolgere**). → Sezione 8.
+- **Scenario C — Conversione fedele di una scansione degradata** (nessuna sintesi: solo trascrizione + pulizia OCR, con struttura). → Sezione 8-bis.
 
-> ⚠️ Sono lavori diversi. In B **non si riassume e non si cambiano termini/concetti**: si pulisce e si rende fluente. In A si *produce* la sintesi vera e propria.
+> ⚠️ Sono lavori diversi. In B e C **non si riassume e non si cambiano termini/concetti**: si pulisce e si rende fluente. In A si *produce* la sintesi vera e propria.
 
 ---
 
@@ -57,6 +58,8 @@ uni-synthesis/
 │   ├── split_pdf.py        ← doppie pagine → pagine singole (vettoriale, conserva il layer testo)
 │   ├── revise_extract.py   ← estratto → markdown pulito (paragrafi, note `>`, titoli)
 │   ├── ocr_crosscheck.py   ← seconda lettura OCR CPU (tesseract) + confronto (cross-check)
+│   ├── ocr_to_markdown.py  ← SCANSIONE DEGRADATA → markdown (re-OCR CPU per unità + strutturazione)
+│   ├── merge_cleaned_parts.py ← blocchi ripuliti → un unico markdown (indice, note, "Da verificare")
 │   ├── split_chapters.py   ← estratto.md → un file per capitolo
 │   ├── quality_check.py    ← copertura sintesi vs originale (deterministico + opz. LLM)
 │   ├── report.py           ← report di fine lavorazione
@@ -65,6 +68,7 @@ uni-synthesis/
 │   ├── synth_chapter.md   ← prompt agente sintesi (3 fasi)
 │   ├── verify_chapter.md  ← prompt verifica incrociata
 │   ├── amalgamate.md      ← prompt amalgama finale
+│   ├── normalize_ocr.md   ← prompt pulizia OCR (Scenario C: solo refusi, nessuna sintesi)
 │   └── transcribe_page.md ← trascrizione pagina scansione degradata
 └── books/                 ← workspace operativa per ogni libro
 ```
@@ -256,6 +260,56 @@ Se l'utente vuole **confrontare**, produci versioni multiple in file separati e 
 
 ---
 
+## 8-bis. Scenario C — Conversione fedele di una scansione degradata
+
+Caso tipico (es. `CamScanner` + `OCRmyPDF`): il PDF ha già un layer OCR ma è **inutilizzabile** — su un volume con **pagine doppie** l'OCR legge le due facciate come un'unica colonna (righe interlacciate, testo tagliato al margine interno). Non serve una sintesi: serve una **trascrizione fedele + pulizia dei refusi**.
+
+### C.1 Pipeline
+
+```bash
+# 1) re-OCR in CPU (tesseract) per unità: pagina intera, o metà pagina per gli spread
+python scripts/ocr_to_markdown.py \
+    --pdf "books/<Libro>.pdf" \
+    --out "books/<Libro>/<Libro> - strutturato.md" \
+    --config "books/<Libro>/_config.json"
+
+# 2) split in capitoli e poi in blocchi (~5.000 parole), allineati ai paragrafi
+#    (per la pulizia in parallelo dei blocchi)
+
+# 3) pulizia: un agente per blocco con prompts/normalize_ocr.md
+#    (input: blocco grezzo → output: blocco ripulito; NON riassume)
+
+# 4) amalgama dei blocchi ripuliti
+python scripts/merge_cleaned_parts.py \
+    --dir "books/<Libro>/puliti" \
+    --out "books/<Libro>.md" \
+    --title "<Titolo>" --authors "<Autori>" \
+    --order 00_frontespizio capitolo_primo capitolo_secondo ...
+
+# 5) report + export PDF
+python scripts/report.py --book "books/<Libro>"
+python scripts/export_pdf.py "books/<Libro>.md" --toc
+```
+
+`_config.json` (parametri libro-specifici per `ocr_to_markdown.py`):
+```json
+{
+  "lang": "ita", "psm": 4, "upscale": 2,
+  "skip_pages": [1, 2, 3, 4, 5],
+  "running_head_re": "regex aggiuntiva per le testatine",
+  "chapters": [{"num": 1, "ordinal": "Primo", "title": "<titolo cap. 1>"}]
+}
+```
+
+### C.2 Regole
+
+- **Non si riassume**: si corregge solo l'OCR (parole unite/a spezzate, caratteri estranei, punteggiatura). Vedi `prompts/normalize_ocr.md`.
+- I blocchi non ricostruibili si **segnalano** (sezione finale `## Da verificare`), non si inventano.
+- Note a piè di pagina → note markdown `[^n]`; bibliografia e citazioni si conservano.
+- L'**indice** va generato con ancore compatibili con pandoc (algoritmo `auto_identifiers`), altrimenti i link interni non funzionano nel PDF (`merge_cleaned_parts.py` lo fa già).
+
+---
+
 ## 9. Trabocchetti e lezioni apprese
 
 - **Non usare PNG per il quality-check testo:** i PNG possono tagliare testo ai bordi. Per confrontare PDF↔md leggi il PDF **direttamente** con `fitz.get_text()`.
@@ -264,7 +318,14 @@ Se l'utente vuole **confrontare**, produci versioni multiple in file separati e 
 - **Granularità agenti:** preferisci sempre più agenti piccoli, paralleli, in background (il modello più capace disponibile).
 - **Nomi file con Unicode:** apostrofi tipografici (`'`), ellissi (`…`), accenti possono far fallire `Read` per NFC/NFD → leggi con `cat` via shell come eccezione.
 - **PDF nativo silenziosamente "ibrido":** alcuni PDF hanno layer testo solo su alcune pagine. Se `full_to_text.py` produce sezioni vuote, passa a `ocr_to_text.py`.
-- **OCR: prima la CPU, poi l'LLM.** Per lettura/validazione del testo usa **tesseract in CPU** (`scripts/ocr_crosscheck.py`), non un LLM multimodale: è più veloce, gratis, riproducibile e non dipende da modello/GPU. Riserva l'LLM alla **comprensione e pulizia del testo** (e all'arbitraggio tra due letture). Il repo resta **agnostico rispetto al modello**: eventuali LLM (cloud o locali) si configurano **solo** via `.env` (vedi `.env.example`), mai hardcoded.
+- **OCR: prima la CPU, poi l'LLM.** Per lettura/validazione del testo usa **tesseract in CPU** (`scripts/ocr_crosscheck.py`, `scripts/ocr_to_markdown.py`), non un LLM multimodale: è più veloce, gratis, riproducibile e non dipende da modello/GPU. Riserva l'LLM alla **comprensione e pulizia del testo** (e all'arbitraggio tra due letture). Il repo resta **agnostico rispetto al modello**: eventuali LLM (cloud o locali) si configurano **solo** via `.env` (vedi `.env.example`), mai hardcoded.
+- **Le pagine doppie (spread) NON si leggono come una pagina.** Su un volume con due facciate per pagina, l'OCR "a pagina intera" legge le due colonne come una sola ⇒ righe interlacciate e testo tagliato al margine interno. **Spezza sempre in unità** (pagina singola / metà pagina) e OCR **ogni unità**. Vedi `scripts/ocr_to_markdown.py`.
+- **Il layer OCR presente ≠ layer OCR utilizzabile.** `get_text()` può restituire testo che *sembra* ok ma è interlacciato. Prima di fidarsi, confronta due letture indipendenti (`ocr_crosscheck.py`) o ispeziona una pagina-spread a video.
+- **Risoluzione nativa troppo bassa = OCR sbagliato.** Su scansioni a ~150 dpi tesseract produce parole stravolte ("ganizzazione" → "gamzzazmxle"). Fai **upscale 2× (Lanczos)** dell'immagine prima dell'OCR: risolve la maggior parte degli errori. (`ocr_to_markdown.py --upscale 2`, default.)
+- **Le immagini embedded sono più veloci del render.** Se ogni pagina ha una sola immagine 1:1 con il `rect`, estraila con `doc.extract_image()` e ritaglia: risparmi minuti (il salvataggio PNG a 300 dpi è proibitivo); salvala in **JPEG**.
+- **Le note a piè di pagina sono numerate in sequenza**: usale come discrimine per riconoscere l'inizio del blocco note in fondo pagina (evita di scambiare un titolo di paragrafo per una nota). Numeri stampati (non un contatore interno) per non "sfasare" le note mancanti.
+- **Ancore dell'indice = ancore di pandoc.** Se scrivi un indice con link interni nel markdown, genera gli slug con **lo stesso algoritmo di `auto_identifiers` di pandoc** (minuscole, via la punteggiatura, spazi→`-`, **via tutto fino alla prima lettera**), altrimenti nel PDF esportato i link non funzionano. `merge_cleaned_parts.py` lo fa; verifica con `pandoc file.md -t html5 | grep id=`.
+- **`pandoc --pdf-engine=weasyprint` cerca il binario sul PATH.** Se weasyprint è installato solo nel virtualenv, pandoc non lo trova: passa il percorso esplicito (`--pdf-engine=$(python -c 'import sys,os;print(os.path.dirname(sys.executable))')/weasyprint`). `export_pdf.py` lo risolve da solo.
 
 ---
 
@@ -307,6 +368,13 @@ python scripts/ocr_crosscheck.py --mode full --dpi 300 \
   --pdf "books/MioLibro/MioLibro - split.pdf" \
   --current "books/MioLibro/MioLibro - estratto.md" \
   --out "books/MioLibro/quality_check cross-ocr.md"
+
+# Scansione degradata (pagine doppie / OCR interlacciato) → markdown fedele
+python scripts/ocr_to_markdown.py --pdf "books/Scan.pdf" \
+  --out "books/Scan/Scan - strutturato.md" --config "books/Scan/_config.json"
+# … pulizia dei blocchi con prompts/normalize_ocr.md …
+python scripts/merge_cleaned_parts.py --dir "books/Scan/puliti" \
+  --out "books/Scan.md" --title "Titolo" --authors "Autori"
 
 # Solo quality check
 python scripts/quality_check.py \

@@ -29,6 +29,7 @@ Dipendenze (almeno una catena deve essere presente):
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -180,15 +181,33 @@ def export_typst(md_path: Path, out_path: Path, toc: bool) -> None:
     subprocess.run(cmd, check=True)
 
 
+def weasyprint_bin() -> str | None:
+    """Trova l'eseguibile weasyprint: prima quello dell'interprete corrente
+    (es. `.venv/bin/weasyprint`), poi quello sul PATH."""
+    cand = Path(sys.executable).parent / "weasyprint"
+    if cand.exists():
+        return str(cand)
+    return shutil.which("weasyprint")
+
+
 def export_weasyprint(md_path: Path, out_path: Path, css: Path, toc: bool) -> None:
+    wp = weasyprint_bin()
+    if not wp:
+        sys.exit("Errore: l'eseguibile 'weasyprint' non è raggiungibile. "
+                 "Installa python-weasyprint nell'ambiente attivo.")
     cmd = ["pandoc", str(md_path), "-o", str(out_path),
-           "--pdf-engine=weasyprint",
+           f"--pdf-engine={wp}",
            f"--css={css}",
-           "--mathjax"] + PANDOC_BASE_ARGS  # MathJax renderizza $...$ in HTML
+           "--math-method=mathjax"] + PANDOC_BASE_ARGS  # MathJax renderizza $...$ in HTML
     if toc:
         cmd += ["--toc", "--toc-depth=3"]
     print(f"$ {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    # assicura che pandoc trovi weasyprint anche come interprete Python
+    env = dict(os.environ)
+    bindir = str(Path(wp).parent)
+    if bindir not in env.get("PATH", "").split(os.pathsep):
+        env["PATH"] = bindir + os.pathsep + env.get("PATH", "")
+    subprocess.run(cmd, check=True, env=env)
 
 
 def main() -> None:
